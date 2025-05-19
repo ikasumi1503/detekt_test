@@ -1,46 +1,61 @@
-# .github/workflows/ktlint.yml
-name: ktlint
+name: Static code analysis
+
+permissions:
+  contents: read
+  pull-requests: write
 
 on:
   push:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  lint:
+  detekt:
     runs-on: ubuntu-latest
+
     steps:
-      # 1) リポジトリをチェックアウト
-      - uses: actions/checkout@v4
+      - name: Checkout PR code
+        uses: actions/checkout@v3
 
-      # 2) JDK をセットアップ（必要に応じて java-version を調整）
-      - uses: actions/setup-java@v3
+      - name: Setup JDK 17
+        uses: actions/setup-java@v3
         with:
-          distribution: temurin
-          java-version: 11
+          java-version: "17"
+          distribution: "microsoft"
 
-      # 3) ktlint をダウンロード＆実行し、チェック結果を XML レポートに出力
-      - name: Download ktlint CLI
-        run: |
-          curl -sSLo ktlint https://github.com/pinterest/ktlint/releases/download/0.50.0/ktlint
-          chmod a+x ktlint
-          sudo mv ktlint /usr/local/bin/
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
 
-      - name: Run ktlint with XML report
-        run: |
-          mkdir -p build
-          ktlint --reporter=checkstyle,output=build/ktlint-report.xml || true
-
-      # 4) アノテーション用にレポートをパースして PR 上にフィードバック
-      - name: Annotate ktlint results on PR
-        if: github.event_name == 'pull_request'
-        uses: yutailang0119/action-ktlint@v5.0.0
+      - name: Setup reviewdog
+        uses: reviewdog/action-setup@v1
         with:
-          report-path: build/ktlint-report.xml
-          ignore-warnings: true
+          reviewdog_version: latest
 
-      - name: Dump ktlint-report.xml
+      - name: Grant execute permission to gradlew
+        run: chmod +x ./gradlew
+
+      # ✅ detektは失敗させず、max-issues指定
+      - name: Run detekt
+        run: ./gradlew detekt || true
+
+      - name: reviewdog report
         if: always()
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "=== ktlint report ==="
-          sed -n '1,200p' build/ktlint-report.xml || true
+          if [ -f app/reports/detekt/detekt.xml ]; then
+            set +e
+            reviewdog -f=checkstyle \
+                      -name="detekt" \
+                      -reporter=github-pr-review \
+                      -filter-mode=added \
+                      -fail-on-error=false \
+                      -tee < app/reports/detekt/detekt.xml
+            echo "✅ reviewdog finished with code $?"
+          else
+            echo "⚠️ detekt.xml not found. Skipping reviewdog."
+          fi
