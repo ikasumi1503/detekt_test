@@ -41,6 +41,9 @@ fun Greeting(name: String, modifier: Modifier = Modifier) {
 @Preview(showBackground = true)
 @Composable
 fun GreetingPreview() {
+    fun culc(){
+        val k = 1 + 2+ 3+1 + 2+ 3+1 + 2+ 3+1 + 2+ 3
+    }
     Detekt_testTheme {
         Greeting("Android")
     }
