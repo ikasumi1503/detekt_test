@@ -1,0 +1,46 @@
+# .github/workflows/ktlint.yml
+name: ktlint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      # 1) リポジトリをチェックアウト
+      - uses: actions/checkout@v4
+
+      # 2) JDK をセットアップ（必要に応じて java-version を調整）
+      - uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 11
+
+      # 3) ktlint をダウンロード＆実行し、チェック結果を XML レポートに出力
+      - name: Download ktlint CLI
+        run: |
+          curl -sSLo ktlint https://github.com/pinterest/ktlint/releases/download/0.50.0/ktlint
+          chmod a+x ktlint
+          sudo mv ktlint /usr/local/bin/
+
+      - name: Run ktlint with XML report
+        run: |
+          mkdir -p build
+          ktlint --reporter=checkstyle,output=build/ktlint-report.xml || true
+
+      # 4) アノテーション用にレポートをパースして PR 上にフィードバック
+      - name: Annotate ktlint results on PR
+        if: github.event_name == 'pull_request'
+        uses: yutailang0119/action-ktlint@v5.0.0
+        with:
+          report-path: build/ktlint-report.xml
+          ignore-warnings: true
+
+      - name: Dump ktlint-report.xml
+        if: always()
+        run: |
+          echo "=== ktlint report ==="
+          sed -n '1,200p' build/ktlint-report.xml || true
